@@ -181,6 +181,10 @@ export interface ExtractAtomsOpts {
   _managedRetry?: { requestId: string; retryId: string };
   brainDir?: string;
   sourceId?: string;
+  /** Cooperative cancellation from the owning cycle or Minion job. */
+  signal?: AbortSignal;
+  /** Absolute worker deadline, used as a backstop around non-chat work. */
+  deadlineAtMs?: number | null;
   dryRun?: boolean;
   affectedSlugs?: string[];
   /** Test seam: alternative chat function (bypasses real LLM calls). */
@@ -656,6 +660,16 @@ export async function runPhaseExtractAtoms(
   const managed = await managedAtomSession(engine, sourceId, opts._managedRetry);
   const writeRequests: WriteReceipt[] = [];
 
+  const throwIfCancelled = (): void => {
+    if (!opts.signal?.aborted && (opts.deadlineAtMs == null || Date.now() < opts.deadlineAtMs)) return;
+    const reason = opts.signal?.reason;
+    if (reason instanceof Error && reason.name === 'AbortError') throw reason;
+    const error = new Error(reason instanceof Error ? reason.message : 'extract_atoms cancelled');
+    error.name = 'AbortError';
+    throw error;
+  };
+  throwIfCancelled();
+
   // 1a. Get transcripts (test seam OR production discovery).
   //     v0.41.2.1: config loader switched to loadConfigWithEngine() so the
   //     dream.* DB-plane merge from Phase 1 reaches this phase.
@@ -1067,6 +1081,7 @@ export async function runPhaseExtractAtoms(
 
   await withBudgetTracker(budgetTracker, async () => {
   for (const item of work) {
+    throwIfCancelled();
     await maybeYield();
     if (budgetExhausted || budgetTracker.totalSpent >= budgetCap) {
       if (item.kind === 'transcript') transcriptsSkipped++;
@@ -1097,6 +1112,7 @@ export async function runPhaseExtractAtoms(
           },
         ],
         maxTokens: maxOutputTokens,
+        abortSignal: opts.signal,
       });
       // Post-await yield: closes the "long LLM call past TTL" hazard
       // codex flagged. The 30s throttle inside maybeYield bounds the
@@ -1319,6 +1335,7 @@ export async function runPhaseExtractAtoms(
       opts.progress?.tick(1, `${totalAtomsExtracted} atoms / ${duplicatesSkipped} skipped`);
     } catch (err) {
       if (err instanceof OperationError && err.writeRequest) writeRequests.push(err.writeRequest);
+      if (opts.signal?.aborted || (err instanceof Error && err.name === 'AbortError')) throw err;
       if (err instanceof BudgetExhausted) {
         budgetExhausted = true;
         if (item.kind === 'transcript') transcriptsSkipped++;
