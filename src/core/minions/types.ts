@@ -569,6 +569,13 @@ export interface SubagentHandlerData {
    */
   require_writes?: boolean;
   /**
+   * Patterns-only exception to require_writes: a clean end_turn with zero
+   * put_page attempts means no recurring theme met the evidence threshold.
+   * Attempted failures and non-clean endings still fail closed. Callers other
+   * than the patterns phase must leave this unset.
+   */
+  allow_clean_zero_writes?: boolean;
+  /**
    * #4216 — synthesis execution mode. 'oneshot' = single structured
    * completion + programmatic validated writes, falling back to the agentic
    * loop in the SAME job when the output fails validation. Unset/'agentic'

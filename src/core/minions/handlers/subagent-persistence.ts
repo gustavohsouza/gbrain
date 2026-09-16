@@ -245,7 +245,11 @@ export async function finalizeWriteAccounting(
   engine: BrainEngine,
   jobId: number,
   result: SubagentResult,
-  opts: { requireWrites: boolean; scopeToolUseIdPrefix?: string },
+  opts: {
+    requireWrites: boolean;
+    allowCleanZeroWrites?: boolean;
+    scopeToolUseIdPrefix?: string;
+  },
 ): Promise<SubagentResult> {
   let rows: Array<{ status: string; error: string | null; output: unknown }>;
   try {
@@ -291,7 +295,11 @@ export async function finalizeWriteAccounting(
       `all ${failed} put_page write(s) failed — job produced zero pages (first error: ${firstError})`,
     );
   }
-  if (opts.requireWrites && attempted === 0) {
+  if (
+    opts.requireWrites &&
+    attempted === 0 &&
+    !(opts.allowCleanZeroWrites && result.stop_reason === 'end_turn')
+  ) {
     throw new UnrecoverableError(
       result.stop_reason === 'end_turn'
         ? 'job produced zero required put_page writes — a clean model finish does not satisfy require_writes'

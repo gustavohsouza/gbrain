@@ -970,6 +970,71 @@ describe('write accounting (#4217)', () => {
     expect(result.pages_failed).toBe(0);
   });
 
+  test('patterns-only clean-zero policy accepts an end_turn with no write attempts', async () => {
+    const client = new FakeMessagesClient([
+      { content: [{ type: 'text', text: 'nothing met the pattern threshold' }] as any, stop_reason: 'end_turn' },
+    ]);
+    const handler = makeSubagentHandler({ engine, client, toolRegistry: [makePutPageTool('ok')] });
+    const ctx = await makeCtx({
+      prompt: 'detect patterns',
+      require_writes: true,
+      allow_clean_zero_writes: true,
+    });
+
+    const result = await handler(ctx);
+
+    expect(result.stop_reason).toBe('end_turn');
+    expect(result.pages_attempted).toBe(0);
+    expect(result.pages_written).toBe(0);
+    expect(result.pages_failed).toBe(0);
+  });
+
+  test('patterns-only clean-zero policy still rejects a non-clean no-write ending', async () => {
+    const client = new FakeMessagesClient([
+      { content: [{ type: 'text', text: 'stopped before deciding' }] as any, stop_reason: 'max_tokens' },
+    ]);
+    const handler = makeSubagentHandler({ engine, client, toolRegistry: [makePutPageTool('ok')] });
+    const ctx = await makeCtx({
+      prompt: 'detect patterns',
+      require_writes: true,
+      allow_clean_zero_writes: true,
+    });
+
+    await expect(handler(ctx)).rejects.toThrow(
+      'zero put_page writes and did not finish cleanly',
+    );
+  });
+
+  test('patterns-only clean-zero policy still rejects attempted writes that all fail', async () => {
+    const client = new FakeMessagesClient([putPageTurn('wiki/a', 'tu_patterns_fail'), endTurn]);
+    const handler = makeSubagentHandler({ engine, client, toolRegistry: [makePutPageTool('fail')] });
+    const ctx = await makeCtx({
+      prompt: 'detect patterns',
+      require_writes: true,
+      allow_clean_zero_writes: true,
+    });
+
+    await expect(handler(ctx)).rejects.toThrow(
+      /all 1 put_page write\(s\) failed.*1024 dimensions/,
+    );
+  });
+
+  test('patterns-only clean-zero policy preserves successful write accounting', async () => {
+    const client = new FakeMessagesClient([putPageTurn('wiki/a', 'tu_patterns_ok'), endTurn]);
+    const handler = makeSubagentHandler({ engine, client, toolRegistry: [makePutPageTool('ok')] });
+    const ctx = await makeCtx({
+      prompt: 'detect patterns',
+      require_writes: true,
+      allow_clean_zero_writes: true,
+    });
+
+    const result = await handler(ctx);
+
+    expect(result.pages_attempted).toBe(1);
+    expect(result.pages_written).toBe(1);
+    expect(result.pages_failed).toBe(0);
+  });
+
   test('non-put_page tool failures do not count toward write accounting', async () => {
     const client = new FakeMessagesClient([
       { content: [{ type: 'tool_use', id: 'tu_b', name: 'broken', input: {} }] as any, stop_reason: 'tool_use' },

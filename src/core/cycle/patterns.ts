@@ -251,6 +251,11 @@ export async function runPhasePatterns(
       // dead-letter (its whole purpose is writing pattern pages), not report
       // completed with zero pages.
       require_writes: true,
+      // A clean no-write finish is meaningful for patterns: no theme met the
+      // evidence threshold. This exception is deliberately absent from
+      // synthesize/transcript jobs; failed attempts and non-clean endings are
+      // still rejected by write accounting.
+      allow_clean_zero_writes: true,
       allowed_slug_prefixes: allowedSlugPrefixes,
       // #1586: scope every child tool call to the cycle's resolved source so
       // put_page writes land there instead of the hardcoded 'default'.

@@ -82,6 +82,21 @@ describe('runPhasePatterns completed child outcome (#4026)', () => {
       expect(result.details.child_outcome).toBe('completed');
       expect(result.details.patterns_written).toBe(0);
       expect(result.error?.code).not.toBe('PATTERNS_CHILD_COMPLETED');
+      expect(await engine.getConfig('dream.patterns.last_evidence_ts')).not.toBeNull();
+
+      const jobs = await engine.executeRaw<{ data: Record<string, unknown> }>(
+        `SELECT data FROM minion_jobs WHERE name = 'subagent' ORDER BY id DESC LIMIT 1`,
+      );
+      expect(jobs[0]?.data.allow_clean_zero_writes).toBe(true);
+
+      const unchanged = await runPhasePatterns(engine, { brainDir, dryRun: false });
+      expect(unchanged.status).toBe('skipped');
+      expect(unchanged.details.reason).toBe('no_new_evidence');
+
+      const jobCount = await engine.executeRaw<{ count: number }>(
+        `SELECT count(*)::int AS count FROM minion_jobs WHERE name = 'subagent'`,
+      );
+      expect(jobCount[0]?.count).toBe(1);
     } finally {
       rmSync(brainDir, { recursive: true, force: true });
     }
